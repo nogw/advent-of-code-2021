@@ -1,115 +1,157 @@
-// (libraries str)) in dune file
-// execute, paste input
-// press CTRL + C to exec
-
-let range = n => {
-  let rec aux = (list, index) =>
-    if (index == n) {
-      list;
-    } else {
-      [index, ...aux(list, succ(index))];
+let read_lines = (name): list(string) => {
+  let ic = open_in(name);
+  let try_read = () =>
+    try(Some(input_line(ic))) {
+    | End_of_file => None
     };
-
-  aux([], 0);
-};
-
-module Numbers = {
-  include Set.Make(Int);
-
-  let drawn = (t, number) => {
-    mem(number, t);
-  };
-};
-
-module Board = {
-  type t = array(array(int));
-
-  let create = list => {
-    list |> List.map(Array.of_list) |> Array.of_list;
-  };
-
-  let win = (numbers, board) => {
-    let row = Array.exists(Array.for_all(Numbers.drawn(numbers)), board);
-    let column =
-      List.exists(
-        i =>
-          board
-          |> Array.map(row => row[i])
-          |> Array.for_all(Numbers.drawn(numbers)),
-        range(5),
-      );
-
-    column || row;
-  };
-
-  let find_winner = (boards, numbers) => {
-    List.find_opt(win(numbers), boards);
-  };
-};
-
-module Bingo = {
-  type t = {
-    last_n: int,
-    drawn: Numbers.t,
-    winner: Board.t,
-  };
-
-  let find_winner = (boards, numbers) => {
-    let rec aux = (boards, drawn, queue) => {
-      let (last_n, drawn, queue) =
-        switch (queue) {
-        | [h, ...tail] => (h, Numbers.add(h, drawn), tail)
-        | [] => assert(false)
-        };
-
-      switch (Board.find_winner(boards, drawn)) {
-      | Some(board) => {last_n, drawn, winner: board}
-      | None => aux(boards, drawn, queue)
-      };
+  let rec loop = acc =>
+    switch (try_read()) {
+    | Some(s) => loop([s, ...acc])
+    | None =>
+      close_in(ic);
+      List.rev(acc);
     };
-    aux(boards, Numbers.empty, numbers);
-  };
-
-  let score = t => {
-    t.winner
-    |> Array.map(Array.to_list)
-    |> Array.to_list
-    |> List.flatten
-    |> List.filter(n => !Numbers.drawn(t.drawn, n))
-    |> List.fold_left((+), 0)
-    |> ( * )(t.last_n);
-  };
+  loop([]);
 };
 
-let read_numbers = () => {
-  let line = read_line();
-  line |> String.split_on_char(',') |> List.map(int_of_string);
-};
+let str_lines = read_lines("input.txt");
+let drawn_str = List.hd(str_lines);
 
-let get_board = () => {
-  assert(read_line() == "");
+let boards_str =
+  switch (str_lines) {
+  | [_, _, ...rest] => rest
+  | _ => []
+  };
 
+let rec chunk = list =>
+  switch (list) {
+  | [a, b, c, d, e, ...rest] => [[a, b, c, d, e], ...chunk(rest)]
+  | _ => []
+  };
+
+let rec split = (char, str) =>
+  try({
+    let pos = String.index(str, char);
+    let dir = String.sub(str, 0, pos);
+    let rest = String.sub(str, pos + 1, String.length(str) - (pos + 1));
+    [dir, ...split(char, rest)];
+  }) {
+  | Not_found => [str]
+  };
+
+let chunkedboards =
   List.map(
-    _ =>
-      read_line()
-      |> Str.split(Str.regexp("[ ]+"))
-      |> List.map(int_of_string),
-    range(5),
+    nestlist => List.map(split(' '), nestlist),
+    chunk(List.filter(x => x != "", boards_str)),
   );
+
+let remove_empty_cells_from_row = row => List.filter(cell => cell != "", row);
+let clean_each_row_in_board = board =>
+  List.map(remove_empty_cells_from_row, board);
+
+let apply_to_all_cell = (fn, row) => List.map(fn, row);
+let apply_to_all_row = (fn, board) =>
+  List.map(apply_to_all_cell(fn), board);
+let apply_to_all_board = (fn, board_list) =>
+  List.map(apply_to_all_row(fn), board_list);
+
+let cleaned_boards = List.map(clean_each_row_in_board, chunkedboards);
+let inted_boards = apply_to_all_board(int_of_string, cleaned_boards);
+
+let tupled_boards = apply_to_all_board(cell => (cell, false), inted_boards);
+
+let drawn =
+  List.map(
+    int_of_string,
+    List.filter(str => str != "", split(',', drawn_str)),
+  );
+
+let mark_cell = (number, tup) => {
+  let (value, _) = tup;
+  if (number == value) {
+    (value, true);
+  } else {
+    tup;
+  };
 };
 
-let get_boards = () => {
-  let rec aux = boards =>
-    try(aux([get_board(), ...boards])) {
-    | End_of_file => boards
-    };
+let rec check_rows = inboard =>
+  switch (inboard) {
+  | [row, ...rows] =>
+    if (List.for_all(
+          tup => {
+            let (_, marked) = tup;
+            marked;
+          },
+          row,
+        )) {
+      true;
+    } else {
+      check_rows(rows);
+    }
+  | _ => false
+  };
 
-  List.map(Board.create) @@ List.rev @@ aux([]);
+let convert = row =>
+  List.map(
+    tup => {
+      let (_, marked) = tup;
+      if (marked) {1} else {0};
+    },
+    row,
+  );
+
+let count_column = board =>
+  List.fold_left(
+    (acclist, list) => List.map2((+), acclist, list),
+    [0, 0, 0, 0, 0],
+    List.map(convert, board),
+  );
+
+let check_winning_column = board =>
+  List.exists(x => x == 5, count_column(board));
+
+let sum_unmarked = board =>
+  List.fold_left(
+    (acc, t) => {
+      let (v, _) = t;
+      acc + v;
+    },
+    0,
+    List.filter(
+      t => {
+        let (_, m) = t;
+        !m;
+      },
+      List.flatten(board),
+    ),
+  );
+
+let winning_board = board =>
+  check_winning_column(board) || check_rows(board);
+
+let rec find_winning_board = (numbers, boards, last_number) => {
+  let found = List.exists(winning_board, boards);
+  switch (numbers) {
+  | [] => (0, None)
+  | _ =>
+    let drawn = List.hd(numbers);
+    found
+      ? {
+        let board =
+          try(Some(List.find(check_winning_column, boards))) {
+          | _ => Some(List.find(check_rows, boards))
+          };
+        (last_number, board);
+      }
+      : find_winning_board(
+          List.tl(numbers),
+          apply_to_all_board(mark_cell(drawn), boards),
+          drawn,
+        );
+  };
 };
 
-let () = {
-  let numbers = read_numbers();
-  let boards = get_boards();
-  let bingo = Bingo.find_winner(boards, numbers);
-  Printf.printf("%d\n", Bingo.score(bingo));
-};
+let (drawn, board) = find_winning_board(drawn, tupled_boards, 0);
+
+let () = print_int(drawn * sum_unmarked(Option.get(board)));

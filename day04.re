@@ -14,11 +14,9 @@ let read_lines = (name): list(string) => {
   loop([]);
 };
 
-let str_lines = read_lines("input.txt");
-let drawn_str = List.hd(str_lines);
-
+let lines = read_lines("input.txt");
 let boards_str =
-  switch (str_lines) {
+  switch (lines) {
   | [_, _, ...rest] => rest
   | _ => []
   };
@@ -63,7 +61,7 @@ let tupled_boards = apply_to_all_board(cell => (cell, false), inted_boards);
 let drawn =
   List.map(
     int_of_string,
-    List.filter(str => str != "", split(',', drawn_str)),
+    List.filter(str => str != "", split(',', List.hd(lines))),
   );
 
 let mark_cell = (number, tup) => {

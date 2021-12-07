@@ -77,42 +77,46 @@ let count_ones = (list, pos) => {
   List.fold_left((acc, x) => acc + x, 0, List.map(one_or_zero(pos), list));
 };
 
-let rec count_all_ones = (list, n_digits) =>
-  switch (n_digits) {
-  | (-1) => []
-  | _ => [count_ones(list, n_digits), ...count_all_ones(list, n_digits - 1)]
-  };
-
-let new_results = count_all_ones(int_lines, num_digits - 1);
-
-let one_or_zero = x =>
-  if (x > List.length(int_lines) / 2) {
+let digit_to_keep = (list, pos) => {
+  let maj = float(List.length(list)) /. 2.;
+  if (float(count_ones(list, pos)) >= maj) {
     1;
   } else {
     0;
   };
-let condensed = List.map(one_or_zero, new_results);
-let swapped =
-  List.map(
-    x =>
-      if (x == 1) {
-        0;
-      } else {
-        1;
-      },
-    condensed,
-  );
-
-let debinarize = binary_digit_list => {
-  let rec process = (acc, l, exp) =>
-    switch (l) {
-    | [x, ...xs] => process(acc + x * pow(2, exp), xs, exp + 1)
-    | [] => acc
-    };
-  process(0, List.rev(binary_digit_list), 0);
 };
 
-let epsilon = debinarize(condensed);
-let gamma = debinarize(swapped);
+let digit_to_keep_inv = (list, pos) => {
+  let maj = float(List.length(list)) /. 2.;
+  if (float(count_ones(list, pos)) >= maj) {
+    0;
+  } else {
+    1;
+  };
+};
 
-print_int(epsilon * gamma);
+let rec f = (list, pos, compare_fun) => {
+  let digit = compare_fun(list, pos);
+  switch (list) {
+  | [x] => x
+  | [_, ..._] =>
+    let new_list =
+      List.filter(
+        x =>
+          if (digit == 1) {
+            x land pow(2, pos) != 0;
+          } else {
+            x land pow(2, pos) == 0;
+          },
+        list,
+      );
+    f(new_list, pos - 1, compare_fun);
+  | _ => 0
+  };
+};
+
+let o = f(int_lines, num_digits - 1, digit_to_keep);
+let co2 = f(int_lines, num_digits - 1, digit_to_keep_inv);
+let p2 = o * co2;
+
+print_int(p2);

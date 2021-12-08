@@ -41,7 +41,7 @@ let () = {
     | None => PointHashtbl.add(table, point, 1)
     };
 
-  let each = (x, y, f) =>
+  let add = (x, y, f) =>
     if (x < y) {
       for (n in x to y) {
         f(n);
@@ -56,9 +56,9 @@ let () = {
     try({
       let (x, y, x', y') = parse(input_line(ic));
       if (x == x') {
-        each(y, y', y => incr((x, y)));
+        add(y, y', y => incr((x, y)));
       } else if (y == y') {
-        each(x, x', x => incr((x, y)));
+        add(x, x', x => incr((x, y)));
       } else {
         diagonals := [(x, y, x', y'), ...diagonals^];
       };
@@ -69,7 +69,7 @@ let () = {
 
   f1();
 
-  let each2 = (x, y, x', y', f) => {
+  let add' = (x, y, x', y', f) => {
     let f1 =
       if (x < x') {
         (+);
@@ -83,23 +83,23 @@ let () = {
         (-);
       };
 
-    let rec each2 = (x, y) => {
+    let rec add' = (x, y) => {
       f(x, y);
       if (x != x') {
-        each2(f1(x, 1), f2(y, 1));
+        add'(f1(x, 1), f2(y, 1));
       };
     };
 
-    each2(x, y);
+    add'(x, y);
   };
 
   let rec f2 =
     fun
     | [(x, y, x', y'), ...rest] => {
-        each2(x, y, x', y', (x, y) => incr((x, y)));
+        add'(x, y, x', y', (x, y) => incr((x, y)));
         f2(rest);
       }
-    | [] => print_endline("Part 2: " ++ string_of_int(at_least_2^));
+    | [] => at_least_2^;
 
-  f2(diagonals^);
+  f2(diagonals^) |> print_int;
 };

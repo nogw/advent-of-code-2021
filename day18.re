@@ -1,3 +1,21 @@
+type pair = (elm, elm)
+
+and elm =
+  | Literal(int)
+  | Pair(pair);
+
+type stack_el =
+  | Stack_l(char)
+  | Stack_p(pair)
+  | Int(int);
+
+type reduction =
+  | Explode(int, int)
+  | Nop;
+
+let is_digit = ch => ch >= '0' && ch <= '9';
+let parse = ch => Char.code(ch) - Char.code('0');
+
 let read_lines = name => {
   let ic = open_in(name);
   let try_read = () =>
@@ -14,146 +32,142 @@ let read_lines = name => {
   loop([]);
 };
 
-type snail =
-  | Base(int)
-  | Snail(snail, snail);
+let make =
+  fun
+  | [Int(y), Int(x), Stack_l('['), ...tl] => [
+      Stack_p((Literal(x), Literal(y))),
+      ...tl,
+    ]
+  | [Int(y), Stack_p(p), Stack_l('['), ...tl] => [
+      Stack_p((Pair(p), Literal(y))),
+      ...tl,
+    ]
+  | [Stack_p(p), Int(x), Stack_l('['), ...tl] => [
+      Stack_p((Literal(x), Pair(p))),
+      ...tl,
+    ]
+  | [Stack_p(p2), Stack_p(p1), Stack_l('['), ...tl] => [
+      Stack_p((Pair(p1), Pair(p2))),
+      ...tl,
+    ]
+  | _ => failwith("uh, bad ;/");
 
-let to_char_list = s => List.init(String.length(s), String.get(s));
+let pop =
+  fun
+  | [Stack_p(p)] => p
+  | _ => failwith("uh, bad ;/");
 
-let parse = l => {
-  let find = s =>
-    to_char_list(s)
-    |> List.mapi((i, c) => (i, c))
-    |> List.fold_left(
-         ((count, i), (curr_index, c)) =>
-           switch (c) {
-           | '[' => (count + 1, i)
-           | ']' => (count - 1, i)
-           | ',' =>
-             if (count == 0 && i == (-1)) {
-               (count, curr_index);
-             } else {
-               (count, i);
-             }
-           | _ => (count, i)
-           },
-         (0, (-1)),
-       )
-    |> (((_, y)) => y);
-  let rec parse_s = s =>
-    switch (String.length(s)) {
-    | 1 => Base(int_of_string(s))
-    | n =>
-      String.sub(s, 1, n - 2)
-      |> (
-        s => {
-          let i = find(s);
-          let fst = String.sub(s, 0, i);
-          let snd = String.sub(s, i + 1, String.length(s) - i - 1);
+let parse = input => {
+  let rec parse' = (stack, idx) =>
+    if (idx == String.length(input)) {
+      stack;
+    } else {
+      let ch = input.[idx];
+      switch (ch) {
+      | '[' => parse'([Stack_l(ch), ...stack], idx + 1)
+      | ch when is_digit(ch) =>
+        parse'([Int(parse(ch)), ...stack], idx + 1)
+      | ']' => parse'(make(stack), idx + 1)
+      | _ => parse'(stack, idx + 1)
+      };
+    };
 
-          Snail(parse_s(fst), parse_s(snd));
-        }
+  parse'([], 0) |> pop;
+};
+
+let rec add_left = v =>
+  fun
+  | Literal(x) => Literal(x + v)
+  | Pair((left, right)) => Pair((add_left(v, left), right));
+
+let rec add_right = v =>
+  fun
+  | Literal(x) => Literal(x + v)
+  | Pair((left, right)) => Pair((left, add_right(v, right)));
+
+let rec reduce = ((e1, e2)) => {
+  let rec split =
+    fun
+    | Literal(v) when v > 9 => {
+        let left = v / 2;
+        let right = float_of_int(v) /. 2. |> ceil |> int_of_float;
+        (Pair((Literal(left), Literal(right))), true);
+      }
+    | Literal(_) as e => (e, false)
+    | Pair((e1, e2)) => {
+        let (left, splitted) = split(e1);
+        if (splitted) {
+          (Pair((left, e2)), true);
+        } else {
+          let (right, splitted) = split(e2);
+          (Pair((left, right)), splitted);
+        };
+      };
+
+  let rec explode = depth =>
+    fun
+    | Literal(_) as e => (e, Nop, false)
+    | Pair((Literal(x), Literal(y))) when depth >= 4 => (
+        Literal(0),
+        Explode(x, y),
+        true,
       )
-    };
-
-  l |> List.map(parse_s);
-};
-
-let rec eq = (s1, s2) => {
-  switch (s1) {
-  | Base(v) =>
-    switch (s2) {
-    | Base(v') => v == v'
-    | _ => false
-    }
-  | Snail(s1', s2') =>
-    switch (s2) {
-    | Base(_) => false
-    | Snail(s1'', s2'') => eq(s1', s1'') && eq(s2', s2'')
-    }
-  };
-};
-
-let rec explode = (num, s) => {
-  let rec add = num =>
-    fun
-    | Base(x) => Base(x + num)
-    | Snail(s1, s2) => Snail(add(num, s1), s2);
-  let rec add' = num =>
-    fun
-    | Base(x) => Base(x + num)
-    | Snail(s1, s2) => Snail(s1, add'(num, s2));
-
-  switch (num) {
-  | 0 =>
-    switch (s) {
-    | Snail(Base(x), Base(y)) => (x, Base(0), y)
-    | _ => (0, s, 0)
-    }
-  | _ =>
-    switch (s) {
-    | Snail(s1, s2) =>
-      let (left, new_s, right) = explode(num - 1, s1);
-
-      if (eq(s1, new_s)) {
-        let (left, new_s', right) = explode(num - 1, s2);
-
-        (0, Snail(add'(left, s1), new_s'), right);
-      } else {
-        (left, Snail(new_s, add(right, s2)), 0);
+    | Pair((e1, e2)) =>
+      switch (explode(depth + 1, e1)) {
+      | (left, Explode(carry, v), true) => (
+          Pair((left, add_left(v, e2))),
+          Explode(carry, 0),
+          true,
+        )
+      | (left, Nop, true) => (Pair((left, e2)), Nop, true)
+      | (_, _, false) =>
+        switch (explode(depth + 1, e2)) {
+        | (right, Explode(v, carry), true) => (
+            Pair((add_right(v, e1), right)),
+            Explode(0, carry),
+            true,
+          )
+        | (right, Nop, true) => (Pair((e1, right)), Nop, true)
+        | (_, op, false) => (Pair((e1, e2)), op, false)
+        }
       };
-    | _ => (0, s, 0)
+
+  switch (explode(0, Pair((e1, e2)))) {
+  | (Literal(_), _, true) => failwith("uh, bad ;/")
+  | (Pair((e1, e2)), _, true) => reduce((e1, e2))
+  | (e, _, false) =>
+    switch (split(e)) {
+    | (Literal(_), true) => failwith("uh, bad ;/")
+    | (Pair((e1, e2)), true) => reduce((e1, e2))
+    | (_, false) => e
     }
   };
 };
-
-let rec split = s =>
-  switch (s) {
-  | Base(n) when n < 10 => s
-  | Base(n) when n mod 2 == 0 => Snail(Base(n / 2), Base(n / 2))
-  | Base(n) => Snail(Base(n / 2), Base(n / 2 + 1))
-  | Snail(s1, s2) =>
-    let new_s = split(s1);
-
-    if (eq(s1, new_s)) {
-      Snail(s1, split(s2));
-    } else {
-      Snail(new_s, s2);
-    };
-  };
-
-let reduce = s => {
-  let rec aux = s => {
-    let (_, e, _) = explode(4, s);
-
-    if (eq(s, e)) {
-      let sp = split(s);
-
-      if (eq(sp, s)) {
-        s;
-      } else {
-        aux(sp);
-      };
-    } else {
-      aux(e);
-    };
-  };
-
-  aux(s);
-};
-
-let add = (s1, s2) => reduce @@ Snail(s1, s2);
 
 let rec magnitude =
   fun
-  | Base(x) => x
-  | Snail(s1, s2) => 3 * magnitude(s1) + 2 * magnitude(s2);
+  | Literal(v) => v
+  | Pair((e1, e2)) => 3 * magnitude(e1) + 2 * magnitude(e2);
 
-let () =
+let rec to_string =
+  fun
+  | Literal(v) => Int.to_string(v)
+  | Pair((e1, e2)) =>
+    Printf.sprintf("[%s,%s]", to_string(e1), to_string(e2));
+
+let add = (pair1, pair2) => reduce((pair1, pair2));
+
+let sum =
+  fun
+  | [] => failwith("uh, bad ;/")
+  | [solo] => solo
+  | [first, ...tl] => List.fold_left((acc, p) => add(acc, p), first, tl);
+
+let () = {
   read_lines("input.txt")
-  |> parse
-  |> (
-    l => List.fold_left((acc, x) => add(acc, x), List.hd(l), List.tl(l))
-  )
+  |> List.map(parse)
+  |> List.map(reduce)
+  |> sum
   |> magnitude
   |> print_int;
+};
